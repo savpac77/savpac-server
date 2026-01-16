@@ -1,12 +1,9 @@
-require("dotenv").config();
-
 const express = require("express");
 const cors = require("cors");
+require("dotenv").config();
 const OpenAI = require("openai");
 
 const app = express();
-const port = process.env.PORT || 10000;
-
 app.use(cors());
 app.use(express.json());
 
@@ -14,35 +11,26 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// ROUTE TEST (pour vérifier que le serveur répond)
 app.get("/", (req, res) => {
-  res.send("✅ Serveur SAVPAC IA actif");
+  res.json({ status: "SAVPAC server OK" });
 });
 
+// ROUTE ANALYSE
 app.post("/analyze", async (req, res) => {
   try {
     const { text } = req.body;
 
-    if (!text) {
+    if (!text || !text.trim()) {
       return res.status(400).json({ error: "Texte manquant" });
     }
 
     const response = await client.responses.create({
       model: "gpt-4.1-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `Tu es un expert SAV chauffage.
-Analyse ce problème et donne un diagnostic clair, des causes possibles et des actions à vérifier.
+      input: `Tu es un expert SAV chauffage.
+Analyse le problème suivant et donne un diagnostic clair et structuré :
 
-Problème :
 ${text}`,
-            },
-          ],
-        },
-      ],
     });
 
     const output =
@@ -55,11 +43,12 @@ ${text}`,
       diagnostic: output,
     });
   } catch (error) {
-    console.error("❌ Erreur OpenAI :", error);
-    res.status(500).json({ error: "Erreur analyse IA" });
+    console.error("Erreur OpenAI :", error);
+    res.status(500).json({ error: "Erreur serveur IA" });
   }
 });
 
-app.listen(port, () => {
-  console.log(`✅ Serveur SAVPAC IA lancé sur le port ${port}`);
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`✅ Serveur SAVPAC IA lancé sur le port ${PORT}`);
 });

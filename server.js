@@ -1,105 +1,65 @@
-const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-const OpenAI = require("openai");
 require("dotenv").config();
 
+const express = require("express");
+const cors = require("cors");
+const OpenAI = require("openai");
+
 const app = express();
-const upload = multer({ dest: "uploads/" });
+const port = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json());
 
-/**
- * Client OpenAI (API officielle)
- */
-const openai = new OpenAI({
+const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-/**
- * Route TEST (pour vérifier que le serveur répond)
- */
 app.get("/", (req, res) => {
-  res.json({ status: "SAVPAC server OK ✅" });
+  res.send("✅ Serveur SAVPAC IA actif");
 });
 
-/**
- * ROUTE IA PRINCIPALE
- * POST /analyze
- * - text (optionnel)
- * - photo (optionnel)
- */
-app.post("/analyze", upload.single("photo"), async (req, res) => {
+app.post("/analyze", async (req, res) => {
   try {
-    const userText = req.body.text || "";
-    let imageBase64 = null;
+    const { text } = req.body;
 
-    if (req.file) {
-      const buffer = fs.readFileSync(req.file.path);
-      imageBase64 = buffer.toString("base64");
-      fs.unlinkSync(req.file.path);
+    if (!text) {
+      return res.status(400).json({ error: "Texte manquant" });
     }
 
-    // Construction du prompt SAV expert
-    const inputContent = [];
-
-    if (userText) {
-      inputContent.push({
-        type: "input_text",
-        text: `Description du problème SAV : ${userText}`,
-      });
-    }
-
-    if (imageBase64) {
-      inputContent.push({
-        type: "input_image",
-        image_base64: imageBase64,
-      });
-    }
-
-    const response = await openai.responses.create({
+    const response = await client.responses.create({
       model: "gpt-4.1-mini",
       input: [
         {
-          role: "system",
+          role: "user",
           content: [
             {
-              type: "text",
-              text: "Tu es un expert SAV en chauffage, chaudières, PAC et climatisation. Donne un diagnostic clair, structuré et actionnable pour un technicien terrain.",
+              type: "input_text",
+              text: `Tu es un expert SAV chauffage.
+Analyse ce problème et donne un diagnostic clair, des causes possibles et des actions à vérifier.
+
+Problème :
+${text}`,
             },
           ],
         },
-        {
-          role: "user",
-          content: inputContent,
-        },
       ],
-      max_output_tokens: 400,
     });
 
-    const outputText =
+    const output =
       response.output_text ||
-      "Aucune réponse IA disponible pour le moment.";
+      response.output?.[0]?.content?.[0]?.text ||
+      "Aucune réponse IA";
 
     res.json({
       success: true,
-      result: outputText,
+      diagnostic: output,
     });
   } catch (error) {
-    console.error("❌ ERREUR IA :", error);
-    res.status(500).json({
-      success: false,
-      error: "Erreur analyse IA",
-    });
+    console.error("❌ Erreur OpenAI :", error);
+    res.status(500).json({ error: "Erreur analyse IA" });
   }
 });
 
-/**
- * Lancement serveur (Render fournit le PORT)
- */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ Serveur SAVPAC IA lancé sur le port ${PORT}`);
+app.listen(port, () => {
+  console.log(`✅ Serveur SAVPAC IA lancé sur le port ${port}`);
 });

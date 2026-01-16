@@ -11,12 +11,12 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ROUTE TEST (pour vérifier que le serveur répond)
+// Test serveur
 app.get("/", (req, res) => {
   res.json({ status: "SAVPAC server OK" });
 });
 
-// ROUTE ANALYSE
+// Analyse IA
 app.post("/analyze", async (req, res) => {
   try {
     const { text } = req.body;
@@ -27,10 +27,20 @@ app.post("/analyze", async (req, res) => {
 
     const response = await client.responses.create({
       model: "gpt-4.1-mini",
-      input: `Tu es un expert SAV chauffage.
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: `Tu es un expert SAV chauffage.
 Analyse le problème suivant et donne un diagnostic clair et structuré :
 
 ${text}`,
+            },
+          ],
+        },
+      ],
     });
 
     const output =
@@ -43,7 +53,7 @@ ${text}`,
       diagnostic: output,
     });
   } catch (error) {
-    console.error("Erreur OpenAI :", error);
+    console.error("❌ Erreur OpenAI :", error);
     res.status(500).json({ error: "Erreur serveur IA" });
   }
 });

@@ -2,10 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
-const dotenv = require("dotenv");
 const OpenAI = require("openai");
-
-dotenv.config();
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
@@ -28,11 +25,11 @@ app.post("/analyze", upload.single("photo"), async (req, res) => {
       fs.unlinkSync(req.file.path);
     }
 
-    const messages = [
+    const input = [
       {
         role: "system",
         content:
-          "Tu es un expert SAV chauffage, climatisation et pompe à chaleur. Donne un diagnostic clair, simple et actionnable.",
+          "Tu es un expert SAV chauffage, climatisation et PAC. Donne un diagnostic clair, simple et actionnable.",
       },
       {
         role: "user",
@@ -54,24 +51,23 @@ app.post("/analyze", upload.single("photo"), async (req, res) => {
       },
     ];
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages,
-      max_tokens: 400,
+    const response = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      input,
+      max_output_tokens: 400,
     });
 
     res.json({
       success: true,
-      result: response.choices[0].message.content,
+      result: response.output_text,
     });
-  } catch (error) {
-    console.error("❌ Erreur IA :", error);
+  } catch (err) {
+    console.error("Erreur IA :", err);
     res.status(500).json({ error: "Erreur analyse IA" });
   }
 });
 
 const PORT = process.env.PORT || 10000;
-
 app.listen(PORT, () => {
   console.log(`✅ Serveur IA SAVPAC lancé sur le port ${PORT}`);
 });

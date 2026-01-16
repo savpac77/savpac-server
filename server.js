@@ -1,9 +1,9 @@
-import cors from "cors";
-import dotenv from "dotenv";
-import express from "express";
-import fs from "fs";
-import multer from "multer";
-import fetch from "node-fetch";
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
+const fs = require("fs");
+const dotenv = require("dotenv");
+const OpenAI = require("openai");
 
 dotenv.config();
 
@@ -12,6 +12,10 @@ const upload = multer({ dest: "uploads/" });
 
 app.use(cors());
 app.use(express.json());
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 app.post("/analyze", upload.single("photo"), async (req, res) => {
   try {
@@ -24,7 +28,7 @@ app.post("/analyze", upload.single("photo"), async (req, res) => {
       fs.unlinkSync(req.file.path);
     }
 
-    const input = [
+    const messages = [
       {
         role: "system",
         content:
@@ -39,8 +43,10 @@ app.post("/analyze", upload.single("photo"), async (req, res) => {
           ...(imageBase64
             ? [
                 {
-                  type: "input_image",
-                  image_base64: imageBase64,
+                  type: "image_url",
+                  image_url: {
+                    url: `data:image/jpeg;base64,${imageBase64}`,
+                  },
                 },
               ]
             : []),
@@ -48,37 +54,24 @@ app.post("/analyze", upload.single("photo"), async (req, res) => {
       },
     ];
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        input,
-        max_output_tokens: 400,
-      }),
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages,
+      max_tokens: 400,
     });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("OpenAI error:", data);
-      return res.status(500).json({ error: "Erreur OpenAI" });
-    }
 
     res.json({
       success: true,
-      result: data.output_text,
+      result: response.choices[0].message.content,
     });
-  } catch (err) {
-    console.error("Server error:", err);
+  } catch (error) {
+    console.error("❌ Erreur IA :", error);
     res.status(500).json({ error: "Erreur analyse IA" });
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
+
 app.listen(PORT, () => {
   console.log(`✅ Serveur IA SAVPAC lancé sur le port ${PORT}`);
 });

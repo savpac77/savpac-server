@@ -16,7 +16,7 @@ const openai = new OpenAI({
 
 app.post("/analyze", upload.single("photo"), async (req, res) => {
   try {
-    const text = req.body.text || "";
+    const userText = req.body.text || "";
     let imageBase64 = null;
 
     if (req.file) {
@@ -28,22 +28,24 @@ app.post("/analyze", upload.single("photo"), async (req, res) => {
     const input = [
       {
         role: "system",
-        content:
-          "Tu es un expert SAV chauffage, climatisation et PAC. Donne un diagnostic clair, simple et actionnable.",
+        content: [
+          {
+            type: "output_text",
+            text: "Tu es un expert SAV en chauffage, climatisation et pompes à chaleur. Donne un diagnostic clair, structuré et actionnable.",
+          },
+        ],
       },
       {
         role: "user",
         content: [
-          ...(text
-            ? [{ type: "text", text: `Description utilisateur : ${text}` }]
+          ...(userText
+            ? [{ type: "input_text", text: userText }]
             : []),
           ...(imageBase64
             ? [
                 {
-                  type: "image_url",
-                  image_url: {
-                    url: `data:image/jpeg;base64,${imageBase64}`,
-                  },
+                  type: "input_image",
+                  image_base64: imageBase64,
                 },
               ]
             : []),
@@ -57,17 +59,26 @@ app.post("/analyze", upload.single("photo"), async (req, res) => {
       max_output_tokens: 400,
     });
 
+    const outputText =
+      response.output_text ||
+      response.output?.[0]?.content?.[0]?.text ||
+      "Aucune réponse IA";
+
     res.json({
       success: true,
-      result: response.output_text,
+      result: outputText,
     });
-  } catch (err) {
-    console.error("Erreur IA :", err);
+  } catch (error) {
+    console.error("❌ Erreur OpenAI :", error);
     res.status(500).json({ error: "Erreur analyse IA" });
   }
 });
 
-const PORT = process.env.PORT || 10000;
+app.get("/", (req, res) => {
+  res.send("✅ Serveur IA SAVPAC opérationnel");
+});
+
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Serveur IA SAVPAC lancé sur le port ${PORT}`);
+  console.log(`✅ Serveur IA lancé sur le port ${PORT}`);
 });

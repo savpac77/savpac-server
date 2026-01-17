@@ -7,6 +7,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// =======================
+// CHECK OPENAI KEY
+// =======================
+if (!process.env.OPENAI_API_KEY) {
+  console.error("❌ OPENAI_API_KEY manquante !");
+} else {
+  console.log("✅ OPENAI_API_KEY détectée");
+}
+
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -19,7 +28,7 @@ app.get("/", (req, res) => {
 });
 
 // =======================
-// ROUTE ANALYSE (POST)
+// ROUTE ANALYSE
 // =======================
 app.post("/analyze", async (req, res) => {
   try {
@@ -28,6 +37,8 @@ app.post("/analyze", async (req, res) => {
     if (!text || !text.trim()) {
       return res.status(400).json({ error: "Texte manquant" });
     }
+
+    console.log("📨 Texte reçu :", text);
 
     const response = await client.responses.create({
       model: "gpt-4.1-mini",
@@ -47,7 +58,8 @@ ${text}`,
       ],
     });
 
-    // 🔥 PARSING ROBUSTE DE LA RÉPONSE OPENAI
+    console.log("📦 Réponse OpenAI brute reçue");
+
     let diagnostic = null;
 
     for (const item of response.output || []) {
@@ -61,6 +73,7 @@ ${text}`,
     }
 
     if (!diagnostic) {
+      console.warn("⚠️ Aucune sortie texte IA trouvée");
       return res.json({
         success: true,
         diagnostic: "Aucune réponse IA générée.",
@@ -72,7 +85,7 @@ ${text}`,
       diagnostic,
     });
   } catch (error) {
-    console.error("❌ Erreur OpenAI :", error);
+    console.error("❌ ERREUR OPENAI :", error);
     res.status(500).json({
       error: "Erreur serveur IA",
       details: error.message,

@@ -1,26 +1,87 @@
 const express = require("express");
 const cors = require("cors");
+require("dotenv").config();
+const OpenAI = require("openai");
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
-app.post("/analyze", (req, res) => {
-  console.log("BODY REÇU :", req.body);
-
-  return res.json({
-    success: true,
-    received: req.body,
-    message: "TEST OK",
-  });
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
+// =======================
+// ROUTE TEST
+// =======================
 app.get("/", (req, res) => {
-  res.json({ status: "SERVER OK" });
+  res.json({ status: "SAVPAC server OK" });
 });
 
+// =======================
+// ROUTE ANALYSE (POST)
+// =======================
+app.post("/analyze", async (req, res) => {
+  try {
+    const { text } = req.body;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "Texte manquant" });
+    }
+
+    const response = await client.responses.create({
+      model: "gpt-4.1-mini",
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Tu es un expert SAV chauffage.
+Analyse le problème suivant et donne un diagnostic clair, structuré et professionnel :
+
+${text}`,
+            },
+          ],
+        },
+      ],
+    });
+
+    // 🔥 PARSING ROBUSTE DE LA RÉPONSE OPENAI
+    let diagnostic = null;
+
+    for (const item of response.output || []) {
+      for (const content of item.content || []) {
+        if (content.type === "output_text" && content.text) {
+          diagnostic = content.text;
+          break;
+        }
+      }
+      if (diagnostic) break;
+    }
+
+    if (!diagnostic) {
+      return res.json({
+        success: true,
+        diagnostic: "Aucune réponse IA générée.",
+      });
+    }
+
+    res.json({
+      success: true,
+      diagnostic,
+    });
+  } catch (error) {
+    console.error("❌ Erreur OpenAI :", error);
+    res.status(500).json({
+      error: "Erreur serveur IA",
+      details: error.message,
+    });
+  }
+});
+
+// =======================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log("SERVER TEST ON PORT", PORT);
+  console.log(`✅ Serveur SAVPAC IA lancé sur le port ${PORT}`);
 });

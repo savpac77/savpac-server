@@ -6,7 +6,6 @@ const OpenAI = require("openai");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -23,41 +22,60 @@ app.post(
   upload.single("image"),
   async (req, res) => {
     try {
-      const text = req.body.text || "";
-      const image = req.file;
-
-      if (!image) {
-        return res.status(400).json({ error: "Image manquante" });
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({ error: "Image manquante" });
       }
 
-      const prompt = `
+      const text = req.body.text || "";
+
+      // 🔥 conversion image -> base64
+      const base64Image = req.file.buffer.toString("base64");
+
+      const response = await openai.responses.create({
+        model: "gpt-4.1",
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `
 Tu es un expert SAV chauffage.
-Analyse la photo fournie (défaut, code erreur, pièce visible)
-et le texte utilisateur.
+Analyse VISUELLEMENT la photo fournie ainsi que le texte utilisateur.
+
+Objectif :
+- identifier défaut visible
+- reconnaître code erreur éventuel
+- proposer un diagnostic clair et professionnel
 
 Texte utilisateur :
 "${text}"
-
-Donne un diagnostic clair, structuré et professionnel.
-      `;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-          { role: "system", content: "Expert SAV chauffage" },
-          { role: "user", content: prompt },
+                `,
+              },
+              {
+                type: "input_image",
+                image_base64: base64Image,
+              },
+            ],
+          },
         ],
-        temperature: 0.3,
       });
 
       const diagnostic =
-        completion.choices?.[0]?.message?.content ||
+        response.output_text ||
         "Aucune réponse IA";
 
-      res.json({ success: true, diagnostic });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: "Erreur serveur IA" });
+      res.json({
+        success: true,
+        diagnostic,
+      });
+    } catch (err) {
+      console.error("Erreur IA Vision :", err);
+      res
+        .status(500)
+        .json({ error: "Erreur serveur IA" });
     }
   }
 );

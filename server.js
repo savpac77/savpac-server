@@ -23,18 +23,16 @@ app.post(
   async (req, res) => {
     try {
       if (!req.file) {
-        return res
-          .status(400)
-          .json({ error: "Image manquante" });
+        return res.status(400).json({
+          error: "Image manquante",
+        });
       }
 
       const text = req.body.text || "";
-
-      // 🔥 conversion image -> base64
       const base64Image = req.file.buffer.toString("base64");
 
       const response = await openai.responses.create({
-        model: "gpt-4.1",
+        model: "gpt-4o-mini",
         input: [
           {
             role: "user",
@@ -43,12 +41,9 @@ app.post(
                 type: "input_text",
                 text: `
 Tu es un expert SAV chauffage.
-Analyse VISUELLEMENT la photo fournie ainsi que le texte utilisateur.
 
-Objectif :
-- identifier défaut visible
-- reconnaître code erreur éventuel
-- proposer un diagnostic clair et professionnel
+Analyse visuellement la photo fournie et le texte utilisateur.
+Fournis un diagnostic clair, structuré et professionnel.
 
 Texte utilisateur :
 "${text}"
@@ -72,15 +67,17 @@ Texte utilisateur :
         diagnostic,
       });
     } catch (err) {
-      console.error("Erreur IA Vision :", err);
-      res
-        .status(500)
-        .json({ error: "Erreur serveur IA" });
+      console.error("ERREUR OPENAI :", err);
+      res.status(500).json({
+        error: "Erreur serveur IA",
+      });
     }
   }
 );
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`✅ Serveur SAVPAC IA lancé sur ${PORT}`);
+  console.log(
+    `✅ Serveur SAVPAC IA lancé sur ${PORT}`
+  );
 });

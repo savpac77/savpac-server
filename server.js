@@ -1,10 +1,8 @@
-import cors from "cors";
-import dotenv from "dotenv";
-import express from "express";
-import multer from "multer";
-import fetch from "node-fetch";
-
-dotenv.config();
+const express = require("express");
+const multer = require("multer");
+const cors = require("cors");
+const fetch = require("node-fetch");
+require("dotenv").config();
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -71,8 +69,7 @@ app.post("/analyze-photo", upload.single("photo"), async (req, res) => {
     }
 
     const diagnostic =
-      data.output_text ||
-      "Aucun diagnostic n’a pu être généré.";
+      data.output_text || "Aucun diagnostic n’a pu être généré.";
 
     res.json({ diagnostic });
   } catch (err) {

@@ -3,21 +3,18 @@ const cors = require("cors");
 const multer = require("multer");
 require("dotenv").config();
 const OpenAI = require("openai");
+const fs = require("fs");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-/* =========================
-   CONFIG UPLOAD IMAGE
-========================= */
-const upload = multer({
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
-});
+/* ================================
+   CONFIG
+================================ */
 
-/* =========================
-   OPENAI
-========================= */
+const PORT = process.env.PORT || 10000;
+
 if (!process.env.OPENAI_API_KEY) {
   console.error("❌ OPENAI_API_KEY manquante");
 }
@@ -26,96 +23,104 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-/* =========================
-   TEST SERVEUR
-========================= */
+/* ================================
+   MULTER (UPLOAD PHOTO)
+================================ */
+
+const upload = multer({
+  dest: "uploads/",
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 Mo
+});
+
+/* ================================
+   ROUTE TEST
+================================ */
+
 app.get("/", (req, res) => {
   res.json({ status: "SAVPAC server OK" });
 });
 
-/* =========================
-   TEXTE SEUL
-========================= */
-app.post("/analyze", async (req, res) => {
+/* ================================
+   ANALYSE PHOTO + TEXTE
+================================ */
+
+app.post("/analyze-photo", upload.single("photo"), async (req, res) => {
+  console.log("📸 analyze-photo called");
+
   try {
-    const { text } = req.body;
+    const file = req.file;
+    const text = req.body?.text || "";
 
-    if (!text || !text.trim()) {
-      return res.status(400).json({ error: "Texte manquant" });
-    }
+    console.log("📄 text:", text);
+    console.log("🖼️ file:", file?.path);
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Tu es un expert SAV chauffage. Tu fournis des diagnostics clairs et professionnels.",
-        },
-        { role: "user", content: text },
-      ],
-      temperature: 0.3,
-    });
-
-    res.json({
-      success: true,
-      diagnostic: completion.choices[0].message.content,
-    });
-  } catch (e) {
-    console.error("❌ ERREUR /analyze", e);
-    res.status(500).json({ error: "Erreur serveur IA" });
-  }
-});
-
-/* =========================
-   PHOTO + TEXTE
-========================= */
-app.post("/analyze-photo", upload.single("image"), async (req, res) => {
-  try {
-    const text = req.body.text || "";
-
-    if (!req.file && !text) {
+    if (!file && !text.trim()) {
       return res.status(400).json({
         error: "Aucune photo ni texte reçu",
       });
     }
 
-    const prompt = `
-Analyse cette situation SAV chauffage.
+    let imagePart = [];
+    if (file) {
+      const imageBuffer = fs.readFileSync(file.path);
+      const base64Image = imageBuffer.toString("base64");
 
-Texte utilisateur :
-${text || "Aucun texte fourni"}
+      imagePart.push({
+        type: "input_image",
+        image_base64: base64Image,
+      });
+    }
 
-Donne un diagnostic probable et des actions concrètes.
-`;
+    const messages = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text:
+              text ||
+              "Analyse cette installation de chauffage et donne un diagnostic clair.",
+          },
+          ...imagePart,
+        ],
+      },
+    ];
 
-    const completion = await openai.chat.completions.create({
+    console.log("🤖 Envoi à OpenAI...");
+
+    const response = await openai.responses.create({
       model: "gpt-4.1-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Tu es un expert SAV chauffage, clair, structuré et professionnel.",
-        },
-        { role: "user", content: prompt },
-      ],
-      temperature: 0.3,
+      input: messages,
+      max_output_tokens: 500,
     });
 
-    res.json({
+    const diagnostic =
+      response.output_text || "Aucune analyse générée.";
+
+    console.log("✅ Diagnostic généré");
+
+    if (file) {
+      fs.unlinkSync(file.path); // supprime l'image après traitement
+    }
+
+    return res.json({
       success: true,
-      diagnostic: completion.choices[0].message.content,
+      diagnostic,
     });
-  } catch (e) {
-    console.error("❌ ERREUR /analyze-photo", e);
-    res.status(500).json({ error: "Erreur serveur IA" });
+  } catch (err) {
+    console.error("❌ ERREUR analyze-photo:", err);
+
+    return res.status(500).json({
+      error: "Erreur serveur IA",
+      details: err.message,
+    });
   }
 });
 
-/* =========================
-   START SERVER
-========================= */
-const PORT = process.env.PORT || 10000;
+/* ================================
+   LANCEMENT SERVEUR
+================================ */
+
 app.listen(PORT, () => {
   console.log(`✅ Serveur SAVPAC IA lancé sur ${PORT}`);
 });

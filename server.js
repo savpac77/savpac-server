@@ -1,83 +1,172 @@
-const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-require("dotenv").config();
-const OpenAI = require("openai");
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { useRouter } from "expo-router";
+import { useRef, useState } from "react";
+import {
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-const app = express();
-app.use(cors());
+const API_BASE = "https://savpac-server.onrender.com";
 
-const upload = multer({ storage: multer.memoryStorage() });
+export default function CameraScreen() {
+  const router = useRouter();
+  const cameraRef = useRef<CameraView>(null);
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+  const [permission, requestPermission] = useCameraPermissions();
+  const [facing, setFacing] = useState<CameraType>("back");
+  const [loading, setLoading] = useState(false);
+  const [text, setText] = useState("");
 
-app.get("/", (req, res) => {
-  res.json({ status: "SAVPAC server OK" });
-});
+  if (!permission) {
+    return <View />;
+  }
 
-app.post(
-  "/analyze-photo",
-  upload.single("image"),
-  async (req, res) => {
+  if (!permission.granted) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.text}>Autorisation caméra requise</Text>
+        <TouchableOpacity style={styles.button} onPress={requestPermission}>
+          <Text style={styles.text}>Autoriser</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const takePictureAndSend = async () => {
+    if (!cameraRef.current) return;
+
     try {
-      if (!req.file) {
-        return res.status(400).json({
-          error: "Image manquante",
-        });
+      setLoading(true);
+
+      const photo = await cameraRef.current.takePictureAsync({
+        base64: false,
+      });
+
+      const formData = new FormData();
+      formData.append("image", {
+        uri: photo.uri,
+        name: "photo.jpg",
+        type: "image/jpeg",
+      } as any);
+
+      formData.append("text", text);
+
+      const response = await fetch(`${API_BASE}/analyze-photo`, {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Erreur serveur");
       }
 
-      const text = req.body.text || "";
-      const base64Image = req.file.buffer.toString("base64");
+      Alert.alert("Diagnostic IA", data.diagnostic);
 
-      const response = await openai.responses.create({
-        model: "gpt-4o-mini",
-        input: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: `
-Tu es un expert SAV chauffage.
-
-Analyse visuellement la photo fournie et le texte utilisateur.
-Fournis un diagnostic clair, structuré et professionnel.
-
-Texte utilisateur :
-"${text}"
-                `,
-              },
-              {
-                type: "input_image",
-                image_base64: base64Image,
-              },
-            ],
-          },
-        ],
-      });
-
-      const diagnostic =
-        response.output_text ||
-        "Aucune réponse IA";
-
-      res.json({
-        success: true,
-        diagnostic,
-      });
-    } catch (err) {
-      console.error("ERREUR OPENAI :", err);
-      res.status(500).json({
-        error: "Erreur serveur IA",
-      });
+      // ✅ Navigation PROPRE (sans erreur rouge)
+      router.replace("/(tabs)");
+    } catch (e: any) {
+      Alert.alert(
+        "Erreur",
+        e?.message || "Impossible d'envoyer la photo"
+      );
+    } finally {
+      setLoading(false);
     }
-  }
-);
+  };
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(
-    `✅ Serveur SAVPAC IA lancé sur ${PORT}`
+  return (
+    <View style={styles.container}>
+      <CameraView
+        ref={cameraRef}
+        style={styles.camera}
+        facing={facing}
+      />
+
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Décris le problème (optionnel)"
+          value={text}
+          onChangeText={setText}
+        />
+
+        <View style={styles.controls}>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() =>
+              setFacing((f) => (f === "back" ? "front" : "back"))
+            }
+          >
+            <Text style={styles.text}>🔄</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.capture}
+            onPress={takePictureAndSend}
+            disabled={loading}
+          >
+            <Text style={styles.text}>
+              {loading ? "..." : "📸"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => router.replace("/(tabs)")}
+          >
+            <Text style={styles.text}>⬅</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
   );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  camera: { flex: 1 },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  inputContainer: {
+    position: "absolute",
+    bottom: 0,
+    width: "100%",
+    padding: 12,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  input: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  controls: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  button: {
+    padding: 14,
+    backgroundColor: "#333",
+    borderRadius: 8,
+  },
+  capture: {
+    padding: 20,
+    backgroundColor: "#1e90ff",
+    borderRadius: 50,
+  },
+  text: {
+    color: "#fff",
+    fontSize: 18,
+    textAlign: "center",
+  },
 });

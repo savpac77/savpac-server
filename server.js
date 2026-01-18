@@ -1,11 +1,10 @@
-// server.js — SAVPAC IA SERVER (STABLE VERSION)
+// server.js — SAVPAC IA SERVER (FINAL STABLE VERSION)
 
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const OpenAI = require("openai");
 const cloudinary = require("cloudinary").v2;
-
 require("dotenv").config();
 
 const app = express();
@@ -46,14 +45,14 @@ app.post("/analyze-photo", async (req, res) => {
       return res.status(400).json({ error: "Image manquante" });
     }
 
-    // 1️⃣ Upload image to Cloudinary
+    // 1️⃣ Upload Cloudinary (BASE64 DATA URI OK)
     const upload = await cloudinary.uploader.upload(imageBase64, {
       folder: "savpac",
     });
 
     const imageUrl = upload.secure_url;
 
-    // 2️⃣ Call OpenAI with IMAGE URL (IMPORTANT)
+    // 2️⃣ Appel OpenAI (FORMAT CORRECT)
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
       input: [
@@ -70,7 +69,9 @@ app.post("/analyze-photo", async (req, res) => {
             },
             {
               type: "input_image",
-              image_url: imageUrl,
+              image_url: {
+                url: imageUrl,
+              },
             },
           ],
         },

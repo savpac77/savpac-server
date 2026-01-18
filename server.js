@@ -25,6 +25,12 @@ app.post("/analyze-photo", async (req, res) => {
       return res.status(400).json({ error: "Image manquante" });
     }
 
+    // 🔴 IMPORTANT : on enlève le préfixe data:image/...
+    const pureBase64 = imageBase64.replace(
+      /^data:image\/\w+;base64,/,
+      ""
+    );
+
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
       input: [
@@ -42,9 +48,7 @@ app.post("/analyze-photo", async (req, res) => {
             },
             {
               type: "input_image",
-              image_url: {
-                url: imageBase64, // ✅ FORMAT CORRECT FINAL
-              },
+              image_base64: pureBase64, // ✅ FORMAT CORRECT FINAL
             },
           ],
         },

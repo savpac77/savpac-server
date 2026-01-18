@@ -1,28 +1,42 @@
-import cors from "cors";
-import dotenv from "dotenv";
-import express from "express";
-import OpenAI from "openai";
-
-dotenv.config();
+const express = require("express");
+const cors = require("cors");
+require("dotenv").config();
+const OpenAI = require("openai");
 
 const app = express();
 
 /**
- * IMPORTANT :
- * - on accepte des payloads JSON volumineux (images base64)
+ * IMPORTANT : augmenter la taille max du body
+ * (photo base64)
  */
 app.use(cors());
 app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
+
+/**
+ * Vérification clé OpenAI
+ */
+if (!process.env.OPENAI_API_KEY) {
+  console.error("❌ OPENAI_API_KEY manquante !");
+} else {
+  console.log("✅ OPENAI_API_KEY détectée");
+}
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 /**
- * ROUTE DIAGNOSTIC IMAGE + TEXTE
+ * ROUTE TEST
  */
-app.post("/diagnostic", async (req, res) => {
+app.get("/", (req, res) => {
+  res.json({ status: "SAVPAC server OK" });
+});
+
+/**
+ * ROUTE ANALYSE PHOTO + TEXTE
+ */
+app.post("/analyze-photo", async (req, res) => {
   try {
     const { imageBase64, text } = req.body;
 
@@ -30,57 +44,41 @@ app.post("/diagnostic", async (req, res) => {
       return res.status(400).json({ error: "Image manquante" });
     }
 
-    const promptText =
-      text ||
-      "Analyse cet appareil et explique le message affiché, les causes possibles et les actions recommandées.";
-
-    /**
-     * FORMAT OPENAI CORRECT (TRÈS IMPORTANT)
-     */
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
       input: [
         {
+          role: "system",
+          content:
+            "Tu es un expert SAV chauffage/PAC. Analyse la photo et le texte fournis et donne un diagnostic clair, structuré et professionnel.",
+        },
+        {
           role: "user",
           content: [
             {
-              type: "text",
-              text: promptText,
+              type: "input_text",
+              text: text || "Aucune précision fournie",
             },
             {
-              type: "image_url",
-              image_url: {
-                url: imageBase64, // data:image/jpeg;base64,...
-              },
+              type: "input_image",
+              image_base64: imageBase64, // 👈 base64 BRUT (sans prefix)
             },
           ],
         },
       ],
     });
 
-    const message =
-      response.output_text ||
-      "Analyse terminée mais aucun texte retourné.";
+    const diagnostic =
+      response.output_text || "Aucun diagnostic généré.";
 
     res.json({
       success: true,
-      diagnostic: message,
+      diagnostic,
     });
   } catch (error) {
-    console.error("❌ ERREUR OPENAI :", error);
-
-    res.status(500).json({
-      success: false,
-      error: "Erreur serveur IA",
-    });
+    console.error("❌ Erreur OpenAI :", error);
+    res.status(500).json({ error: "Erreur serveur IA" });
   }
-});
-
-/**
- * ROUTE TEST
- */
-app.get("/", (req, res) => {
-  res.send("✅ Serveur SAVPAC IA opérationnel");
 });
 
 /**

@@ -1,45 +1,55 @@
-// server.js
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
-import fs from "fs";
-import multer from "multer";
 import OpenAI from "openai";
 
 dotenv.config();
 
 const app = express();
-const upload = multer({ dest: "uploads/" });
 
+/* =========================
+   ✅ BODY SIZE (IMPORTANT)
+========================= */
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "15mb" }));
+app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
+/* =========================
+   ✅ OPENAI
+========================= */
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// 🔹 Test serveur
+/* =========================
+   ✅ HEALTH CHECK
+========================= */
 app.get("/", (req, res) => {
   res.json({ status: "SAVPAC server OK" });
 });
 
-// 🔹 Analyse photo
-app.post("/analyze-photo", upload.single("photo"), async (req, res) => {
+/* =========================
+   🧠 ANALYSE PHOTO
+========================= */
+app.post("/analyze-photo", async (req, res) => {
   try {
-    if (!req.file) {
+    const { imageBase64, text } = req.body;
+
+    if (!imageBase64) {
       return res.status(400).json({
-        diagnostic: "Aucune photo reçue.",
+        error: "Image manquante",
       });
     }
 
-    const imageBase64 = fs.readFileSync(req.file.path, {
-      encoding: "base64",
-    });
-
     const prompt = `
-Tu es un expert SAV.
-Analyse cette photo et donne un diagnostic clair, court et utile.
-Si aucun problème n’est visible, dis-le clairement.
+Tu es un technicien SAV expert en chauffage, PAC et thermostats.
+
+Analyse la photo fournie.
+Si un code ou un message est visible, explique-le clairement.
+Propose un diagnostic simple, concret et exploitable.
+
+Informations utilisateur :
+${text || "Aucune information supplémentaire"}
 `;
 
     const response = await openai.responses.create({
@@ -58,35 +68,25 @@ Si aucun problème n’est visible, dis-le clairement.
       ],
     });
 
-    // 🔹 Extraction robuste du texte
-    let diagnostic = "";
-
-    if (response.output_text) {
-      diagnostic = response.output_text.trim();
-    }
-
-    if (!diagnostic) {
-      diagnostic =
-        "L’analyse n’a pas permis d’identifier clairement un problème à partir de cette image.";
-    }
-
-    // Nettoyage fichier temporaire
-    fs.unlinkSync(req.file.path);
+    const diagnostic =
+      response.output_text ||
+      "Aucun diagnostic n’a pu être généré.";
 
     return res.json({
       diagnostic,
     });
   } catch (error) {
-    console.error("❌ ERREUR ANALYSE IA :", error);
+    console.error("❌ IA ERROR:", error);
 
     return res.status(500).json({
-      diagnostic:
-        "Erreur lors de l’analyse IA. Merci de réessayer avec une photo plus nette.",
+      error: "Erreur interne serveur IA",
     });
   }
 });
 
-// 🔹 Lancement serveur
+/* =========================
+   🚀 START SERVER
+========================= */
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`✅ Serveur SAVPAC IA lancé sur ${PORT}`);

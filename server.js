@@ -1,9 +1,12 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const multer = require("multer");
-const fs = require("fs");
-const OpenAI = require("openai");
+// server.js
+import cors from "cors";
+import dotenv from "dotenv";
+import express from "express";
+import fs from "fs";
+import multer from "multer";
+import OpenAI from "openai";
+
+dotenv.config();
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
@@ -15,76 +18,75 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-/* ===========================
-   ROUTE TEST
-=========================== */
+// 🔹 Test serveur
 app.get("/", (req, res) => {
   res.json({ status: "SAVPAC server OK" });
 });
 
-/* ===========================
-   ANALYSE PHOTO + TEXTE
-=========================== */
+// 🔹 Analyse photo
 app.post("/analyze-photo", upload.single("photo"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
-        error: "Aucune photo reçue",
+        diagnostic: "Aucune photo reçue.",
       });
     }
 
-    const userText =
-      req.body.text && req.body.text.trim() !== ""
-        ? req.body.text
-        : "Analyser cet appareil de chauffage et détecter tout problème visible ou suspect.";
+    const imageBase64 = fs.readFileSync(req.file.path, {
+      encoding: "base64",
+    });
 
-    const imageBuffer = fs.readFileSync(req.file.path);
-    const imageBase64 = imageBuffer.toString("base64");
+    const prompt = `
+Tu es un expert SAV.
+Analyse cette photo et donne un diagnostic clair, court et utile.
+Si aucun problème n’est visible, dis-le clairement.
+`;
 
     const response = await openai.responses.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
       input: [
         {
           role: "user",
           content: [
-            { type: "input_text", text: userText },
+            { type: "input_text", text: prompt },
             {
               type: "input_image",
-              image_url: `data:image/jpeg;base64,${imageBase64}`,
+              image_base64: imageBase64,
             },
           ],
         },
       ],
     });
 
-    fs.unlinkSync(req.file.path);
+    // 🔹 Extraction robuste du texte
+    let diagnostic = "";
 
-    const outputText =
-      response.output_text && response.output_text.trim() !== ""
-        ? response.output_text
-        : null;
-
-    if (!outputText) {
-      return res.json({
-        diagnostic:
-          "L’analyse n’a pas permis d’identifier un problème avec certitude. Merci de fournir une photo plus nette ou des détails supplémentaires.",
-      });
+    if (response.output_text) {
+      diagnostic = response.output_text.trim();
     }
 
-    res.json({
-      diagnostic: outputText,
+    if (!diagnostic) {
+      diagnostic =
+        "L’analyse n’a pas permis d’identifier clairement un problème à partir de cette image.";
+    }
+
+    // Nettoyage fichier temporaire
+    fs.unlinkSync(req.file.path);
+
+    return res.json({
+      diagnostic,
     });
   } catch (error) {
-    console.error("❌ Erreur analyse IA :", error);
-    res.status(500).json({
-      error: "Erreur serveur IA",
+    console.error("❌ ERREUR ANALYSE IA :", error);
+
+    return res.status(500).json({
+      diagnostic:
+        "Erreur lors de l’analyse IA. Merci de réessayer avec une photo plus nette.",
     });
   }
 });
 
-/* ===========================
-   LANCEMENT SERVEUR
-=========================== */
+// 🔹 Lancement serveur
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`✅ Serveur SAVPAC IA lancé sur ${PORT}`);

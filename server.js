@@ -1,84 +1,91 @@
-const express = require("express");
-const multer = require("multer");
-const cors = require("cors");
-const fetch = require("node-fetch");
 require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const multer = require("multer");
+const fs = require("fs");
+const OpenAI = require("openai");
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ dest: "uploads/" });
 
 app.use(cors());
+app.use(express.json());
 
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+/* ===========================
+   ROUTE TEST
+=========================== */
 app.get("/", (req, res) => {
   res.json({ status: "SAVPAC server OK" });
 });
 
+/* ===========================
+   ANALYSE PHOTO + TEXTE
+=========================== */
 app.post("/analyze-photo", upload.single("photo"), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: "Aucune image reçue" });
+      return res.status(400).json({
+        error: "Aucune photo reçue",
+      });
     }
 
-    const base64Image = req.file.buffer.toString("base64");
-    const userText = req.body.text || "";
+    const userText =
+      req.body.text && req.body.text.trim() !== ""
+        ? req.body.text
+        : "Analyser cet appareil de chauffage et détecter tout problème visible ou suspect.";
 
-    const openaiResponse = await fetch(
-      "https://api.openai.com/v1/responses",
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4.1-mini",
-          input: [
+    const imageBuffer = fs.readFileSync(req.file.path);
+    const imageBase64 = imageBuffer.toString("base64");
+
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: userText },
             {
-              role: "user",
-              content: [
-                {
-                  type: "input_text",
-                  text:
-                    "Tu es un expert SAV chauffage. Analyse cette photo et le texte utilisateur et donne un diagnostic clair.\n\nTexte utilisateur : " +
-                    userText,
-                },
-                {
-                  type: "input_image",
-                  image_url: `data:image/jpeg;base64,${base64Image}`,
-                },
-              ],
+              type: "input_image",
+              image_url: `data:image/jpeg;base64,${imageBase64}`,
             },
           ],
-        }),
-      }
-    );
+        },
+      ],
+    });
 
-    const raw = await openaiResponse.text();
+    fs.unlinkSync(req.file.path);
 
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      console.error("Réponse OpenAI non JSON :", raw);
-      return res.status(500).json({ error: "Réponse OpenAI invalide" });
+    const outputText =
+      response.output_text && response.output_text.trim() !== ""
+        ? response.output_text
+        : null;
+
+    if (!outputText) {
+      return res.json({
+        diagnostic:
+          "L’analyse n’a pas permis d’identifier un problème avec certitude. Merci de fournir une photo plus nette ou des détails supplémentaires.",
+      });
     }
 
-    if (!openaiResponse.ok) {
-      console.error("Erreur OpenAI :", data);
-      return res.status(500).json({ error: "Erreur OpenAI" });
-    }
-
-    const diagnostic =
-      data.output_text || "Aucun diagnostic n’a pu être généré.";
-
-    res.json({ diagnostic });
-  } catch (err) {
-    console.error("Erreur serveur :", err);
-    res.status(500).json({ error: "Erreur serveur IA" });
+    res.json({
+      diagnostic: outputText,
+    });
+  } catch (error) {
+    console.error("❌ Erreur analyse IA :", error);
+    res.status(500).json({
+      error: "Erreur serveur IA",
+    });
   }
 });
 
+/* ===========================
+   LANCEMENT SERVEUR
+=========================== */
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`Serveur SAVPAC IA lancé sur ${PORT}`);
+  console.log(`✅ Serveur SAVPAC IA lancé sur ${PORT}`);
 });

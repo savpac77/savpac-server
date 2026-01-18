@@ -1,56 +1,47 @@
-import cors from "cors";
-import dotenv from "dotenv";
-import express from "express";
-import OpenAI from "openai";
-
-dotenv.config();
+const express = require("express");
+const cors = require("cors");
+require("dotenv").config();
+const OpenAI = require("openai");
 
 const app = express();
 
-/* =========================
-   ✅ BODY SIZE (IMPORTANT)
-========================= */
+/**
+ * 🔒 Body size augmenté (images caméra)
+ */
 app.use(cors());
-app.use(express.json({ limit: "15mb" }));
-app.use(express.urlencoded({ extended: true, limit: "15mb" }));
+app.use(express.json({ limit: "30mb" }));
+app.use(express.urlencoded({ extended: true, limit: "30mb" }));
 
-/* =========================
-   ✅ OPENAI
-========================= */
+/**
+ * Vérification clé OpenAI
+ */
+if (!process.env.OPENAI_API_KEY) {
+  console.error("❌ OPENAI_API_KEY manquante !");
+} else {
+  console.log("✅ OPENAI_API_KEY détectée");
+}
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-/* =========================
-   ✅ HEALTH CHECK
-========================= */
+/**
+ * ROUTE TEST
+ */
 app.get("/", (req, res) => {
   res.json({ status: "SAVPAC server OK" });
 });
 
-/* =========================
-   🧠 ANALYSE PHOTO
-========================= */
+/**
+ * ROUTE ANALYSE PHOTO + TEXTE
+ */
 app.post("/analyze-photo", async (req, res) => {
   try {
     const { imageBase64, text } = req.body;
 
     if (!imageBase64) {
-      return res.status(400).json({
-        error: "Image manquante",
-      });
+      return res.status(400).json({ error: "Image manquante" });
     }
-
-    const prompt = `
-Tu es un technicien SAV expert en chauffage, PAC et thermostats.
-
-Analyse la photo fournie.
-Si un code ou un message est visible, explique-le clairement.
-Propose un diagnostic simple, concret et exploitable.
-
-Informations utilisateur :
-${text || "Aucune information supplémentaire"}
-`;
 
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
@@ -58,10 +49,10 @@ ${text || "Aucune information supplémentaire"}
         {
           role: "user",
           content: [
-            { type: "input_text", text: prompt },
+            { type: "input_text", text: text || "Analyse cette image." },
             {
               type: "input_image",
-              image_base64: imageBase64,
+              image_url: `data:image/jpeg;base64,${imageBase64}`,
             },
           ],
         },
@@ -72,22 +63,22 @@ ${text || "Aucune information supplémentaire"}
       response.output_text ||
       "Aucun diagnostic n’a pu être généré.";
 
-    return res.json({
+    res.json({
+      success: true,
       diagnostic,
     });
   } catch (error) {
-    console.error("❌ IA ERROR:", error);
-
-    return res.status(500).json({
-      error: "Erreur interne serveur IA",
+    console.error("❌ Erreur IA :", error);
+    res.status(500).json({
+      error: "Erreur serveur IA",
     });
   }
 });
 
-/* =========================
-   🚀 START SERVER
-========================= */
+/**
+ * LANCEMENT SERVEUR
+ */
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`✅ Serveur SAVPAC IA lancé sur ${PORT}`);
+  console.log(`✅ Serveur SAVPAC IA lancé sur le port ${PORT}`);
 });

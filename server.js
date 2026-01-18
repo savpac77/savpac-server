@@ -1,22 +1,43 @@
+// server.js — SAVPAC IA SERVER (STABLE VERSION)
+
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+const bodyParser = require("body-parser");
 const OpenAI = require("openai");
+const cloudinary = require("cloudinary").v2;
+
+require("dotenv").config();
 
 const app = express();
-
 app.use(cors());
-app.use(express.json({ limit: "15mb" }));
-app.use(express.urlencoded({ extended: true, limit: "15mb" }));
+app.use(bodyParser.json({ limit: "20mb" }));
 
+// ===============================
+// CONFIG OPENAI
+// ===============================
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// ===============================
+// CONFIG CLOUDINARY
+// ===============================
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// ===============================
+// HEALTH CHECK
+// ===============================
 app.get("/", (req, res) => {
   res.json({ status: "SAVPAC server OK" });
 });
 
+// ===============================
+// ANALYZE PHOTO ENDPOINT
+// ===============================
 app.post("/analyze-photo", async (req, res) => {
   try {
     const { imageBase64, text } = req.body;
@@ -25,46 +46,50 @@ app.post("/analyze-photo", async (req, res) => {
       return res.status(400).json({ error: "Image manquante" });
     }
 
-    // 🔴 IMPORTANT : on enlève le préfixe data:image/...
-    const pureBase64 = imageBase64.replace(
-      /^data:image\/\w+;base64,/,
-      ""
-    );
+    // 1️⃣ Upload image to Cloudinary
+    const upload = await cloudinary.uploader.upload(imageBase64, {
+      folder: "savpac",
+    });
 
+    const imageUrl = upload.secure_url;
+
+    // 2️⃣ Call OpenAI with IMAGE URL (IMPORTANT)
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
       input: [
-        {
-          role: "system",
-          content:
-            "Tu es un expert SAV chauffage et PAC. Analyse la photo et le texte et fournis un diagnostic clair, structuré et professionnel.",
-        },
         {
           role: "user",
           content: [
             {
               type: "input_text",
-              text: text || "Aucune précision fournie",
+              text:
+                "Tu es un technicien SAV spécialisé en pompes à chaleur Atlantic. " +
+                "Analyse la photo et le texte utilisateur pour expliquer clairement " +
+                "le diagnostic et ce que cela signifie.\n\n" +
+                (text || "Aucune précision supplémentaire."),
             },
             {
               type: "input_image",
-              image_base64: pureBase64, // ✅ FORMAT CORRECT FINAL
+              image_url: imageUrl,
             },
           ],
         },
       ],
     });
 
-    res.json({
-      success: true,
-      diagnostic: response.output_text || "Aucun diagnostic généré.",
-    });
+    const diagnostic =
+      response.output_text || "Aucun diagnostic généré.";
+
+    res.json({ diagnostic });
   } catch (error) {
-    console.error("❌ Erreur OpenAI :", error);
+    console.error("❌ ERREUR IA :", error);
     res.status(500).json({ error: "Erreur serveur IA" });
   }
 });
 
+// ===============================
+// START SERVER
+// ===============================
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`✅ Serveur SAVPAC IA lancé sur le port ${PORT}`);
